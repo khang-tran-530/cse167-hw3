@@ -39,21 +39,128 @@ def parse_triangle_mesh(filename):
 
     return vertices, faces, vertex_normals
 
+    
 def compose_transformations(transformations):
-    """
-        Given a list of transformations, compose them into a matrix.
-    """
-    # HW 3.4: copy paste your HW2.3 code here
-
     F = np.eye(4, dtype=np.float32)
-    return F
 
+    for transform in transformations:
+        M = np.eye(4, dtype=np.float32)
+
+        if 'translate' in transform:
+            M[:3, 3] = transform['translate']
+
+        elif 'scale' in transform:
+            s = transform['scale']
+            M[0, 0] = s[0]
+            M[1, 1] = s[1]
+            M[2, 2] = s[2]
+
+        elif 'rotate_x' in transform:
+            theta = math.radians(transform['rotate_x'][0])
+            c, s = math.cos(theta), math.sin(theta)
+
+            M[1, 1] = c
+            M[1, 2] = -s
+            M[2, 1] = s
+            M[2, 2] = c
+
+        elif 'rotate_y' in transform:
+            theta = math.radians(transform['rotate_y'][0])
+            c, s = math.cos(theta), math.sin(theta)
+
+            M[0, 0] = c
+            M[0, 2] = s
+            M[2, 0] = -s
+            M[2, 2] = c
+
+        elif 'rotate_z' in transform:
+            theta = math.radians(transform['rotate_z'][0])
+            c, s = math.cos(theta), math.sin(theta)
+
+            M[0, 0] = c
+            M[0, 1] = -s
+            M[1, 0] = s
+            M[1, 1] = c
+
+        elif 'lookat' in transform:
+            data = transform['lookat']
+
+            eye = np.array(data['position'], dtype=np.float32)
+            target = np.array(data['target'], dtype=np.float32)
+            up = np.array(data['up'], dtype=np.float32)
+
+            backward = eye - target
+            backward /= np.linalg.norm(backward)
+
+            right = np.cross(up, backward)
+            right /= np.linalg.norm(right)
+
+            true_up = np.cross(backward, right)
+
+            M[:3, 0] = right
+            M[:3, 1] = true_up
+            M[:3, 2] = backward
+            M[:3, 3] = eye
+
+        else:
+            raise ValueError(f"Unknown transformation: {transform}")
+
+        # Apply transformations in the listed order.
+        F = M @ F
+
+    return F.astype(np.float32)
+
+    
 def interpolate_transformation(transform_keyframes, t):
-    # HW 3.4: copy your HW2.4 code here.
+    if len(transform_keyframes) == 0:
+        return []
 
-    # create a new transform from the two keyframes
-    interp_transforms = []
-    return interp_transforms
+    frames = sorted(
+        transform_keyframes,
+        key=lambda frame: frame['time']
+    )
+
+    if t <= frames[0]['time']:
+        return frames[0]['transform']
+
+    if t >= frames[-1]['time']:
+        return frames[-1]['transform']
+
+    for i in range(len(frames) - 1):
+        first = frames[i]
+        second = frames[i + 1]
+
+        t0 = first['time']
+        t1 = second['time']
+
+        if t0 <= t <= t1:
+            alpha = (t - t0) / (t1 - t0)
+
+            def interpolate_value(a, b):
+                if isinstance(a, dict):
+                    return {
+                        key: interpolate_value(a[key], b[key])
+                        for key in a
+                    }
+
+                if isinstance(a, (list, tuple)):
+                    return [
+                        interpolate_value(x, y)
+                        for x, y in zip(a, b)
+                    ]
+
+                return (1.0 - alpha) * a + alpha * b
+
+            return [
+                interpolate_value(a, b)
+                for a, b in zip(
+                    first['transform'],
+                    second['transform']
+                )
+            ]
+
+    return frames[-1]['transform']
+
 
 def get_transformation(obj, t):
     transforms = obj.get('transform', [])
